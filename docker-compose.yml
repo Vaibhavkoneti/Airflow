@@ -1,0 +1,94 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: "postgres:13"
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  webserver:
+    build: .
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname Airflow --lastname Admin --role Admin --email admin@example.com &&
+               airflow webserver"
+    environment:
+      - _AIRFLOW_WWW_USER_CREATE=True
+      - _AIRFLOW_WWW_USER_USERNAME=admin
+      - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=oujjGrv6EhoeTKoMFG00er4aa5cWES9ygiQzk4hbHrs=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=3ad7cc52f6ecb51bb11fa07cee4b41f362791a1b651a8016b476c22bc5f7d582
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/lightspeed-384014-f969690f3692.json
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./plugins:/opt/airflow/plugins
+      - ./keys:/opt/airflow/keys
+
+  scheduler:
+    build: .
+    command: scheduler
+    environment:
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__FERNET_KEY=oujjGrv6EhoeTKoMFG00er4aa5cWES9ygiQzk4hbHrs=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__WEBSERVER__SECRET_KEY=3ad7cc52f6ecb51bb11fa07cee4b41f362791a1b651a8016b476c22bc5f7d582
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/lightspeed-384014-f969690f3692.json
+      
+
+    depends_on:
+      - postgres
+      - webserver
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./plugins:/opt/airflow/plugins
+      - ./keys:/opt/airflow/keys
+
+  worker:
+    build: .
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+      - AIRFLOW__WEBSERVER__SECRET_KEY=3ad7cc52f6ecb51bb11fa07cee4b41f362791a1b651a8016b476c22bc5f7d582
+      - GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/lightspeed-384014-f969690f3692.json
+
+
+    depends_on:
+      - redis
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./plugins:/opt/airflow/plugins
+      - ./keys:/opt/airflow/keys
+
+    command: celery --app=airflow.executors.celery_executor.app:celery_app worker --loglevel=info
+
+  flower:
+    build: .
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    command: celery --app=airflow.executors.celery_executor.app:celery_app flower
+
+  redis:
+    image: "redis:6.2"
+
+volumes:
+  postgres_data:
